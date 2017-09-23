@@ -7,8 +7,7 @@ pyramid, we can create much higher-resolution images, with structure at
 multiple image scales, not necessarily aligned with the receptive field of the
 layers of Gatys.
 
-![Synthesized image]
-(featured.jpg)
+![Synthesized image](featured.jpg)
 
 This code will hopefully, one day, improve. I've rushed it online pre-publication for a [workshop at InterAccess](http://interaccess.org/workshop/2017/jul/objective-functions-creating-images-neural-networks)
 
