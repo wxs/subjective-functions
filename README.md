@@ -31,7 +31,7 @@ To quickly run this on a GPU if you have an account with FloydHub you can run;
 
 then try:
 
-    floyd run --gpu "python3 synthesize.py -s bark.jpg -s bark.jpg --data-dir /vgg_weights --output-dir /output" --data wxswxs/vgg-weights/1:vgg_weights
+    floyd run --gpu "python3 synthesize.py -s bark.jpg --data-dir /vgg_weights --output-dir /output" --data wxswxs/vgg-weights/1:vgg_weights
 
 ## Configuration
 
