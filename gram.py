@@ -14,6 +14,7 @@ import keras.backend as K
 
 from scipy.ndimage import interpolation
 from scipy import linalg
+from scipy.optimize import minimize
 
 from PIL import Image
 import re
@@ -436,6 +437,24 @@ def lap_loss(pyramid_model, target_distance=1., order=2):
 
     return keras.layers.add(order_errors)
 
+def novelty_loss(model):
+    dets = []
+    for gram in model.outputs:
+        # gram will be something like (5, 64, 64)
+        flat = keras.layers.Flatten()(gram)
+
+        # ~ (5, 4096)
+        covar = Lambda(lambda x: K.dot(x,K.transpose(x)),
+                output_shape = lambda input_shape: [input_shape[0], input_shape[0]])(flat)
+
+        # ~ (5, 5)
+        det = Lambda(lambda x: -tf.matrix_determinant(x)-tf.trace(x),
+                output_shape = lambda input_shape: [1])(covar)
+        det = PrintLayer("det")(det)
+        dets.append(det)
+
+    return keras.layers.add(dets)
+
 
 def integer_interframe_distance(pyramid_model, image, shift):
     ''' How much is the lap1 diff if we shift this image by "shift" pixels?'''
@@ -522,12 +541,49 @@ def make_progress_callback(shape, output_directory, save_every=2):
         i[0] += 1
     return progress_callback
 
+
+
+
+def synthesize_novelty(gram_model, width, height, x0, frame_count=1, output_directory="outputs",
+        save_every=10, max_iter=500, tol=1e-9):
+    generated_shape = (height, width)
+    
+    x0_deprepped = deprocess(x0.reshape([-1] + list(generated_shape) + [3]))
+
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
+    for frame_i in range(x0_deprepped.shape[0]):
+        Image.fromarray(x0_deprepped[frame_i])\
+                .save(os.path.join(output_directory, "Aseed_F{:04d}.png".format(frame_i)))
+
+    print("gram model outputs:", len(gram_model.outputs))
+    
+    # I should now have a Gram matrix for each frame.
+    novelty = novelty_loss(gram_model)
+
+    loss_model = Model(inputs=gram_model.input, outputs=[novelty])
+    
+    optimize_me = loss_and_gradients_callable(loss_model, generated_shape)
+
+    #optimize_me = gram_loss_callable(gram_model, target_grams, generated_shape)
+    print("Generated callable")
+
+    print("About to start minimizing...", flush=True)
+    result = minimize(optimize_me, np.ravel(x0), jac=True, method="l-bfgs-b",
+                      callback=make_progress_callback(generated_shape, output_directory, save_every=save_every),
+                      tol=tol,
+                      #bounds=bounds,
+                      options={'disp': True, 'maxiter': max_iter})
+    return result
+                
+    
+
 def synthesize_animation(pyramid_model, gram_model, target_grams,
         width, height, frame_count=1,
         interframe_loss_weight = 1., interframe_order=2, target_interframe_distance = 50.,
         output_directory = "outputs",
         x0=None, max_iter=200, save_every=2, tol=1e-9):
-    from scipy.optimize import minimize
     from scipy import ndimage
     from PIL import ImageFilter
     generated_shape = (height, width)
