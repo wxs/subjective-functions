@@ -4,6 +4,8 @@ import os
 import sys
 import numpy as np
 from scipy import ndimage
+import gram
+from gram import JoinMode
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Synthesize image from texture", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -28,8 +30,11 @@ if __name__ == "__main__":
             help="Scale source to this width. Mutually exclusive with source-scale")
     parser.add_argument("--padding-mode", "-p", type=str, choices = ['valid', 'same'], default='valid',
             help="What boundary condition to use for convolutions")
-    parser.add_argument("--join-mode", "-j", type=str, choices = ['average', 'max'], default='average',
+    parser.add_argument("--join-mode", "-j", type=JoinMode,
+            choices = list(JoinMode),
+            default=JoinMode.AVERAGE,
             help="How to combine gram matrices when multiple sources given")
+
     parser.add_argument("--count", "-c", type=int, default=1,
             help="How many images to generate simultaneously")
     parser.add_argument("--mul", type=float, default=1.0, help="Multiply target grams by this amount")
@@ -60,6 +65,8 @@ if __name__ == "__main__":
         output_dir += ".c{}".format(args.count)
     if args.mul != 1.0:
         output_dir += ".m{}".format(args.mul)
+    if args.join_mode != JoinMode.AVERAGE:
+        output_dir += ".j{}".format(args.join_mode.value)
 
     output_dir += ".{}x{}".format(*output_size)
 
@@ -87,7 +94,6 @@ if __name__ == "__main__":
 
     print("About to generate a {}x{} image, matching the Gram matrices for layers {} at {} distinct scales".format(width, height, args.layers, args.octaves))
 
-    import gram
     pyramid_model = gram.make_pyramid_model(args.octaves, args.padding_mode)
 
     pyramid_gram_model = gram.make_pyramid_gram_model(pyramid_model, args.layers, data_dir=args.data_dir)
@@ -95,6 +101,7 @@ if __name__ == "__main__":
     target_grams = gram.get_gram_matrices_for_images(pyramid_gram_model, args.source,
             source_width = args.source_width, source_scale = args.source_scale, join_mode = args.join_mode)
     target_grams = [t*args.mul for t in target_grams]
+    #target_grams = [np.max(t) - t for t in target_grams]
 
     x0 = np.random.randn(args.count, height, width, 3)
 

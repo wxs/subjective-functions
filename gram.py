@@ -13,10 +13,23 @@ from keras.preprocessing.image import load_img, img_to_array
 import keras.backend as K
 
 from scipy.ndimage import interpolation
+from scipy import linalg
+
 from PIL import Image
 import re
 import string
 from keras.utils import conv_utils
+
+from enum import Enum
+import tensorflow as tf
+
+class JoinMode(Enum):
+    AVERAGE = 'average'
+    MAX = 'max'
+    LOG_EUCLIDEAN = 'log_euclidean'
+    AFFINE_INVARIANT = 'affine_invariant'
+    def __str__(self):
+        return self.value
 
 def load_model(padding='valid', data_dir="model_data"):
     if padding == 'valid':
@@ -296,9 +309,7 @@ def get_images(image_files, source_width=None, source_scale=None):
         del im
         yield prepped
 
-def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width = None, source_scale = None, join_mode = 'average'):
-    if join_mode not in {'average', 'max'}:
-        raise ValueError("Invalid join mode {}. Must be one of 'average', 'max'".format(join_mode))
+def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width = None, source_scale = None, join_mode = JoinMode.AVERAGE):
     
     target_grams = []
     print("Loading image files")
@@ -307,27 +318,56 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
         print("{} / {}...".format(i+1, len(image_files)))
         this_grams = pyramid_gram_model.predict(prepped)
         print("got the grams!")
-        if len(target_grams) == 0:
-            target_grams = this_grams
+
+        if join_mode == JoinMode.AFFINE_INVARIANT:
+            target_grams.append(this_grams)
         else:
-            for target_gram, this_gram in zip(target_grams, this_grams):
-                # There are likely more interesting ways to join gram matrices, including
-                # having "don't care" regions where it's not necessary to match at all. This would
-                # probably allow fusion between disparate image types to work better.
-                if join_mode == 'average':
-                    target_gram += this_gram
-                elif join_mode == 'max':
-                    np.maximum(target_gram, this_gram, out=target_gram)
+            if len(target_grams) == 0:
+                if join_mode == JoinMode.LOG_EUCLIDEAN:
+                    target_grams = [linalg.logm(gram[0]) for gram in this_grams]
                 else:
-                    assert False
+                    target_grams = this_grams
+            else:
+                for target_gram, this_gram in zip(target_grams, this_grams):
+                    # There are likely more interesting ways to join gram matrices, including
+                    # having "don't care" regions where it's not necessary to match at all. This would
+                    # probably allow fusion between disparate image types to work better.
+                    if join_mode == JoinMode.AVERAGE:
+                        target_gram += this_gram
+                    elif join_mode == JoinMode.MAX:
+                        np.maximum(target_gram, this_gram, out=target_gram)
+                    elif join_mode == JoinMode.LOG_EUCLIDEAN:
+                        print(this_gram.shape)
+                        target_gram += linalg.logm(this_gram[0])
+                    else:
+                        assert False
         
     # Normalize the targets
-    if join_mode == 'average':
-        for target_gram in target_grams:
+    if join_mode in {JoinMode.AVERAGE, JoinMode.LOG_EUCLIDEAN}:
+        for i, target_gram in enumerate(target_grams):
             target_gram /= len(image_files)
+            if join_mode == JoinMode.LOG_EUCLIDEAN:
+                target_gram = linalg.expm(target_gram)
+                target_gram = np.expand_dims(target_gram, -1)
+                target_grams[i] = target_gram
+    elif join_mode == JoinMode.AFFINE_INVARIANT:
+        if len(target_grams) != 2:
+            print("WARNING! affine_invariant join mode requires 2 source images")
+        source_grams = target_grams # This was mis-named
+        target_grams = []
+        for A, B in zip(source_grams[0], source_grams[1]):
+            A = A[0]
+            B = B[0]
+            rootA = linalg.fractional_matrix_power(A, 0.5)
+            rootAinv = linalg.fractional_matrix_power(A, -0.5) # hmm... non-invertible because 0 determinant?
+            
+            internal = 0.5 * rootAinv.dot(B).dot(rootAinv)
+
+            interpolated = rootA.dot(linalg.expm(internal)).dot(rootA)
+            target_grams.append(np.expand_dims(interpolated, -1))
+
     return target_grams
         
-    
 def diff_loss(model, targets):
     diff_layers = []
     for base, target in zip(model.outputs, targets):
@@ -335,6 +375,7 @@ def diff_loss(model, targets):
         # Note the slight hack in the lambda with default parameter below; this allows us to effectively create
         # a closure capturing the value of target_gram rather than having them all target the *same* gram
         # (which, incidentally,creates some pretty interesting effects)
+        # TODO: Remove the "prod" again after experiment
         diff_layers.append(Lambda(lambda x, target=target:K.sum(K.square(target - x[0])),
                                                output_shape = lambda input_shape: [1])([base]))
     if len(diff_layers) > 1:
