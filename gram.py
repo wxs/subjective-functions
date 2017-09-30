@@ -496,15 +496,6 @@ def synthesize_animation(pyramid_model, gram_model, target_grams,
         # There are lots of interesting effects to be had by messing with this
         # initialization
         x0 = np.random.randn(*([frame_count] + list(generated_shape) + [3])) * 2
-    #x0 = x0 + x0[:,::-1,    :, :]
-    #x0 = x0 + x0[:,   :, ::-1, :]
-    #blur_radius = 50
-    #for i in range(3):
-        #x0[...,i] = blur_radius*50*ndimage.gaussian_filter(x0[...,i], blur_radius)
-    #x0 += np.random.randn(*([1] + list(generated_shape) + [3])) * 2
-
-    #x0 = preprocess(load_img('../sources/smokeb768.jpg'))
-    
 
     x0_deprepped = deprocess(x0.reshape([-1] + list(generated_shape) + [3]))
 

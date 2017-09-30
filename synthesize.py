@@ -109,6 +109,7 @@ if __name__ == "__main__":
         # Shift the whole thing to be near zero
         x0 += 10 - gram.colour_offsets
 
+    #x0 = preprocess(load_img('../sources/smokeb768.jpg'))
     
     interframe_distances = []
     if args.count > 1:
