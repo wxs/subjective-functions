@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--count", "-c", type=int, default=1,
             help="How many images to generate simultaneously")
-    parser.add_argument("--mul", type=float, default=1.0, help="Multiply target grams by this amount")
+    parser.add_argument("--mul", type=float, default=1.0, help="Multiply identity target by this amount")
     parser.add_argument("--if-weight", type=float, default=1., help="Inter-frame loss weight")
     parser.add_argument("--if-shift", type=float, default=5., help="How many pixel-shift should inter-frame loss approximate?")
     parser.add_argument("--if-order", type=int, default=2., help="How many frames should we 'tie' together?")
@@ -59,6 +59,7 @@ if __name__ == "__main__":
         output_dir += ".c{}".format(args.count)
     if args.mul != 1.0:
         output_dir += ".m{}".format(args.mul)
+
 
     output_dir += ".{}x{}".format(*output_size)
 
@@ -104,7 +105,7 @@ if __name__ == "__main__":
         x0 += 10 - gram.colour_offsets
 
     gram.synthesize_novelty(pyramid_gram_model,
-            width = width, height = height, frame_count=args.count,
+            width = width, height = height, frame_count=args.count, mul=args.mul,
             x0 = x0, output_directory = output_dir, max_iter=args.max_iter, save_every=args.save_every, tol=args.tol)
 
     print("DONE: ")

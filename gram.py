@@ -46,7 +46,7 @@ def load_model(padding='valid', data_dir="model_data"):
     return keras.models.load_model(fname)
 
 def PrintLayer(msg):
-    return Lambda(lambda x: K.print_tensor(x, msg))
+    return Lambda(lambda x: tf.Print(x, [x], message=msg, summarize=16))
 
 def construct_gatys_model(padding='valid'):
     default_model = vgg19.VGG19(weights='imagenet')
@@ -437,7 +437,7 @@ def lap_loss(pyramid_model, target_distance=1., order=2):
 
     return keras.layers.add(order_errors)
 
-def novelty_loss(model):
+def novelty_loss(model, mul=1.0):
     dets = []
     for gram in model.outputs:
         # gram will be something like (5, 64, 64)
@@ -446,14 +446,27 @@ def novelty_loss(model):
         # ~ (5, 4096)
         covar = Lambda(lambda x: K.dot(x,K.transpose(x)),
                 output_shape = lambda input_shape: [input_shape[0], input_shape[0]])(flat)
+        covar = PrintLayer("covar")(covar)
 
         # ~ (5, 5)
-        det = Lambda(lambda x: -tf.matrix_determinant(x)-tf.trace(x),
+        #det = Lambda(lambda x: -tf.matrix_determinant(x),
+                #output_shape = lambda input_shape: [1])(covar)
+        #det = Lambda(lambda x: -2*tf.reduce_sum(tf.log(tf.diag(tf.cholesky(x)))),
+               #output_shape = lambda input_shape: [1])(covar)
+        
+        def eye_diff(x):
+            shape = K.shape(x)
+            return x - mul * tf.eye(shape[0], shape[1])
+
+        det = Lambda(lambda x: K.sum(K.square(eye_diff(x))),
                 output_shape = lambda input_shape: [1])(covar)
         det = PrintLayer("det")(det)
         dets.append(det)
 
-    return keras.layers.add(dets)
+    if len(dets) > 1:
+        return keras.layers.add(dets)
+    else:
+        return dets[0]
 
 
 def integer_interframe_distance(pyramid_model, image, shift):
@@ -544,7 +557,7 @@ def make_progress_callback(shape, output_directory, save_every=2):
 
 
 
-def synthesize_novelty(gram_model, width, height, x0, frame_count=1, output_directory="outputs",
+def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, output_directory="outputs",
         save_every=10, max_iter=500, tol=1e-9):
     generated_shape = (height, width)
     
@@ -560,7 +573,7 @@ def synthesize_novelty(gram_model, width, height, x0, frame_count=1, output_dire
     print("gram model outputs:", len(gram_model.outputs))
     
     # I should now have a Gram matrix for each frame.
-    novelty = novelty_loss(gram_model)
+    novelty = novelty_loss(gram_model, mul=mul)
 
     loss_model = Model(inputs=gram_model.input, outputs=[novelty])
     
