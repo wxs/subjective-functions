@@ -1,5 +1,5 @@
 Pillow>=4.0.0
 scipy==0.19.1
 tensorflow>=1.2.1
-terminado==0.6
 numpy>=1.13.1
+keras

@@ -1,6 +1,5 @@
 # Copyright 2017 Xavier Snelgrove
 import numpy as np
-import matplotlib.pyplot as plt
 
 import os
 
