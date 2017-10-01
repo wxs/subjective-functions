@@ -15,7 +15,7 @@ This code will hopefully, one day, improve. I've rushed it online pre-publicatio
 
 Install the pre-requisites
 
-    pip install -r requirements.txt
+    pip3 install -r requirements.txt
 
 Run locally (this will likely be very slow as it runs on your GPU)
 
