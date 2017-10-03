@@ -16,6 +16,8 @@ if __name__ == "__main__":
             help="Pixel height of generated image. If not specified, equal to output-width.")
     parser.add_argument('--octaves', '-o',  type=int, default=4,
             help="Number of octaves (where 1 means \"Consider only 1 scale\")")
+    parser.add_argument('--octave-step', '-os',  type=int, default=1,
+            help="Can potentially skip some octaves")
     parser.add_argument('--layers', '-l',  type=int, nargs='+', default=[2, 7],
             help="Which layers to match gram matrices on")
     parser.add_argument('--max-iter', '-m', type=int, default=500,
@@ -59,6 +61,8 @@ if __name__ == "__main__":
         output_dir += ".c{}".format(args.count)
     if args.mul != 1.0:
         output_dir += ".m{}".format(args.mul)
+    if args.octave_step != 1:
+        output_dir += ".os{}".format(args.octave_step)
 
 
     output_dir += ".{}x{}".format(*output_size)
@@ -106,6 +110,7 @@ if __name__ == "__main__":
 
     gram.synthesize_novelty(pyramid_gram_model,
             width = width, height = height, frame_count=args.count, mul=args.mul,
+            octave_step = args.octave_step,
             x0 = x0, output_directory = output_dir, max_iter=args.max_iter, save_every=args.save_every, tol=args.tol)
 
     print("DONE: ")

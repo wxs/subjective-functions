@@ -436,9 +436,9 @@ def lap_loss(pyramid_model, target_distance=1., order=2):
 
     return keras.layers.add(order_errors)
 
-def novelty_loss(model, mul=1.0):
+def novelty_loss(grams, mul=1.0):
     dets = []
-    for gram in model.outputs:
+    for gram in grams:
         # gram will be something like (5, 64, 64)
         flat = keras.layers.Flatten()(gram)
 
@@ -557,7 +557,7 @@ def make_progress_callback(shape, output_directory, save_every=2):
 
 
 def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, output_directory="outputs",
-        save_every=10, max_iter=500, tol=1e-9):
+        save_every=10, max_iter=500, tol=1e-9, octave_step=1):
     generated_shape = (height, width)
     
     x0_deprepped = deprocess(x0.reshape([-1] + list(generated_shape) + [3]))
@@ -572,7 +572,7 @@ def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, ou
     print("gram model outputs:", len(gram_model.outputs))
     
     # I should now have a Gram matrix for each frame.
-    novelty = novelty_loss(gram_model, mul=mul)
+    novelty = novelty_loss(gram_model.outputs[::octave_step], mul=mul)
 
     loss_model = Model(inputs=gram_model.input, outputs=[novelty])
     
