@@ -32,6 +32,7 @@ if __name__ == "__main__":
             help="Scale source to this width. Mutually exclusive with source-scale")
     parser.add_argument("--padding-mode", "-p", type=str, choices = ['valid', 'same'], default='valid',
             help="What boundary condition to use for convolutions")
+    parser.add_argument("--internal", action="store_true")
 
     parser.add_argument("--count", "-c", type=int, default=1,
             help="How many images to generate simultaneously")
@@ -53,6 +54,8 @@ if __name__ == "__main__":
 
     output_dir = "{}.L{}.o{}".format(args.output_prefix, ",".join(str(l) for l in args.layers), args.octaves)
     output_dir = os.path.join(args.output_dir, output_dir)
+    if args.internal:
+        output_dir += ".internal"
     if args.source_scale:
         output_dir += ".w{:.2}".format(args.source_scale)
     if args.source_width:
@@ -111,6 +114,7 @@ if __name__ == "__main__":
     gram.synthesize_novelty(pyramid_gram_model,
             width = width, height = height, frame_count=args.count, mul=args.mul,
             octave_step = args.octave_step,
+            internal = args.internal,
             x0 = x0, output_directory = output_dir, max_iter=args.max_iter, save_every=args.save_every, tol=args.tol)
 
     print("DONE: ")

@@ -47,6 +47,9 @@ def load_model(padding='valid', data_dir="model_data"):
 def PrintLayer(msg):
     return Lambda(lambda x: tf.Print(x, [x], message=msg, summarize=16))
 
+def PrintLayerShape(msg):
+    return Lambda(lambda x: tf.Print(x, [tf.shape(x)], message=msg, summarize=16))
+
 def construct_gatys_model(padding='valid'):
     default_model = vgg19.VGG19(weights='imagenet')
 
@@ -467,6 +470,33 @@ def novelty_loss(grams, mul=1.0):
     else:
         return dets[0]
 
+def internal_novelty_loss(grams, mul=1.0):
+    gram = keras.layers.Concatenate(axis=0)(grams)
+    # gram will be something like (5, 64, 64)
+    flat = keras.layers.Flatten()(gram)
+    flat = PrintLayerShape("flat shape")(flat)
+
+    # ~ (5, 4096)
+    covar = Lambda(lambda x: K.dot(x,K.transpose(x)),
+            output_shape = lambda input_shape: [input_shape[0], input_shape[0]])(flat)
+    covar = PrintLayer("covar")(covar)
+
+    # ~ (5, 5)
+    #det = Lambda(lambda x: -tf.matrix_determinant(x),
+            #output_shape = lambda input_shape: [1])(covar)
+    #det = Lambda(lambda x: -2*tf.reduce_sum(tf.log(tf.diag(tf.cholesky(x)))),
+           #output_shape = lambda input_shape: [1])(covar)
+    
+    def eye_diff(x):
+        shape = K.shape(x)
+        return x - mul * tf.eye(shape[0], shape[1])
+
+    det = Lambda(lambda x: K.sum(K.square(eye_diff(x))),
+            output_shape = lambda input_shape: [1])(covar)
+    det = PrintLayer("det")(det)
+    return det
+
+
 
 def integer_interframe_distance(pyramid_model, image, shift):
     ''' How much is the lap1 diff if we shift this image by "shift" pixels?'''
@@ -557,7 +587,7 @@ def make_progress_callback(shape, output_directory, save_every=2):
 
 
 def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, output_directory="outputs",
-        save_every=10, max_iter=500, tol=1e-9, octave_step=1):
+        save_every=10, max_iter=500, tol=1e-9, octave_step=1, internal=False):
     generated_shape = (height, width)
     
     x0_deprepped = deprocess(x0.reshape([-1] + list(generated_shape) + [3]))
@@ -572,7 +602,11 @@ def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, ou
     print("gram model outputs:", len(gram_model.outputs))
     
     # I should now have a Gram matrix for each frame.
-    novelty = novelty_loss(gram_model.outputs[::octave_step], mul=mul)
+    if internal:
+        print("Internal")
+        novelty = internal_novelty_loss(gram_model.outputs[::octave_step], mul=mul)
+    else:
+        novelty = novelty_loss(gram_model.outputs[::octave_step], mul=mul)
 
     loss_model = Model(inputs=gram_model.input, outputs=[novelty])
     
