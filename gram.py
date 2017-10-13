@@ -322,6 +322,10 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
         this_grams = pyramid_gram_model.predict(prepped)
         print("got the grams!")
 
+        if join_mode in {JoinMode.AFFINE_INVARIANT, JoinMode.LOG_EUCLIDEAN}:
+            # Add a small epsilon to the diagonals to ensure a positive definite matrix
+            eps = 0.05
+            this_grams = [g + np.identity(g.shape[0])*eps for g in this_grams]
         if join_mode == JoinMode.AFFINE_INVARIANT:
             target_grams.append(this_grams)
         else:
@@ -359,8 +363,10 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
         source_grams = target_grams # This was mis-named
         target_grams = []
         for A, B in zip(source_grams[0], source_grams[1]):
-            A = A[0]
-            B = B[0]
+            print("A SHAPE", A.shape)
+            print("B SHAPE", B.shape)
+            if len(A.shape) > 2: A = A[0]
+            if len(B.shape) > 2: B = B[0] # TODO: Fix, yo
             rootA = linalg.fractional_matrix_power(A, 0.5)
             rootAinv = linalg.fractional_matrix_power(A, -0.5) # hmm... non-invertible because 0 determinant?
             
