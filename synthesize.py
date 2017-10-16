@@ -22,7 +22,7 @@ if __name__ == "__main__":
             help="Maximum iterations for the L-BFGS-B optimizer")
     parser.add_argument("--output-prefix", "-op", default='out',
             help="Prefix to append to output directory")
-    parser.add_argument("--save-every", "-n", default=10,
+    parser.add_argument("--save-every", "-n", default=10, type=int,
             help="Save an in-progress optimization image every SAVE_EVERY iterations")
     parser.add_argument("--source-scale", "-ss", type=float,
             help="How much to scale the source image by")

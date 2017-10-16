@@ -28,6 +28,7 @@ class JoinMode(Enum):
     MAX = 'max'
     LOG_EUCLIDEAN = 'log_euclidean'
     AFFINE_INVARIANT = 'affine_invariant'
+    RIEMANN = "riemann"
     def __str__(self):
         return self.value
 
@@ -322,16 +323,21 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
         this_grams = pyramid_gram_model.predict(prepped)
         print("got the grams!")
 
-        if join_mode in {JoinMode.AFFINE_INVARIANT, JoinMode.LOG_EUCLIDEAN}:
+        # There is a bug somewhere where if the # of octaves is set to 0 the shapes of these arrays is different
+        this_grams = [np.squeeze(g) for g in this_grams]
+
+        #if join_mode in {JoinMode.AFFINE_INVARIANT, JoinMode.LOG_EUCLIDEAN, JoinMode.RIEMANN}:
+        if True:
             # Add a small epsilon to the diagonals to ensure a positive definite matrix
             eps = 0.05
             this_grams = [g + np.identity(g.shape[0])*eps for g in this_grams]
-        if join_mode == JoinMode.AFFINE_INVARIANT:
+            print(this_grams)
+        if join_mode in {JoinMode.AFFINE_INVARIANT, JoinMode.RIEMANN}:
             target_grams.append(this_grams)
         else:
             if len(target_grams) == 0:
                 if join_mode == JoinMode.LOG_EUCLIDEAN:
-                    target_grams = [linalg.logm(gram[0]) for gram in this_grams]
+                    target_grams = [linalg.logm(gram) for gram in this_grams]
                 else:
                     target_grams = this_grams
             else:
@@ -345,7 +351,7 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
                         np.maximum(target_gram, this_gram, out=target_gram)
                     elif join_mode == JoinMode.LOG_EUCLIDEAN:
                         print(this_gram.shape)
-                        target_gram += linalg.logm(this_gram[0])
+                        target_gram += linalg.logm(this_gram)
                     else:
                         assert False
         
@@ -365,16 +371,29 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
         for A, B in zip(source_grams[0], source_grams[1]):
             print("A SHAPE", A.shape)
             print("B SHAPE", B.shape)
-            if len(A.shape) > 2: A = A[0]
-            if len(B.shape) > 2: B = B[0] # TODO: Fix, yo
+            #if len(A.shape) > 2: A = A[0]
+            #if len(B.shape) > 2: B = B[0] # TODO: Fix, yo
             rootA = linalg.fractional_matrix_power(A, 0.5)
             rootAinv = linalg.fractional_matrix_power(A, -0.5) # hmm... non-invertible because 0 determinant?
             
             internal = 0.5 * rootAinv.dot(B).dot(rootAinv)
 
             interpolated = rootA.dot(linalg.expm(internal)).dot(rootA)
-            target_grams.append(np.expand_dims(interpolated, -1))
+            target_grams.append(interpolated)
+    elif join_mode == JoinMode.RIEMANN:
+        from pyriemann.utils import geodesic
+        source_grams = target_grams # This was mis-named
+        print("Number of source grams: ", len(source_grams))
+        target_grams = []
+        for A, B in zip(source_grams[0], source_grams[1]):
+            print("Geodesic...")
+            interp = geodesic.geodesic(A, B, 0.5, 'riemann')
+            print("A", A)
+            print("B", B)
+            print("interp", interp)
+            target_grams.append(interp)
 
+    print("Target grams shapes: ", [t.shape for t in target_grams])
     return target_grams
         
 def diff_loss(model, targets):
