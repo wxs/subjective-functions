@@ -2,5 +2,5 @@ Pillow>=4.0.0
 scipy==0.19.1
 tensorflow>=1.2.1
 numpy>=1.13.1
-keras
+keras>=2.0.0
 h5py
