@@ -9,8 +9,9 @@ layers of Gatys.
 
 ![Synthesized image](featured.jpg)
 
-This code will hopefully, one day, improve. I've rushed it online pre-publication for a [workshop at InterAccess](http://interaccess.org/workshop/2017/jul/objective-functions-creating-images-neural-networks)
+More information at [the research page](http://wxs.ca/research/multiscale-neural-synthesis/).
 
+This code will hopefully, one day, improve. I've rushed it online pre-publication for a [workshop at InterAccess](http://interaccess.org/workshop/2017/jul/objective-functions-creating-images-neural-networks).
 ## Quickstart
 
 Install the pre-requisites
@@ -23,7 +24,7 @@ Run locally (this will likely be very slow as it runs on your GPU)
 
 Look for output files inside the "outputs" directory that will be created by this command.
 
-### Run in FloydHuh
+### Run in FloydHub
 
 To quickly run this on a GPU if you have an account with FloydHub you can run;
 
