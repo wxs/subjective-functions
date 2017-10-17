@@ -20,7 +20,7 @@ Install the pre-requisites
 
 Run locally (this will likely be very slow as it runs on your GPU)
 
-    python3 synthesize.py -s bark.jpg
+    KERAS_BACKEND=tensorflow python3 synthesize.py -s bark.jpg
 
 Look for output files inside the "outputs" directory that will be created by this command.
 
