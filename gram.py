@@ -340,8 +340,7 @@ def get_gram_matrices_for_images(pyramid_gram_model, image_sources, source_width
         # There is a bug somewhere where if the # of octaves is set to 0 the shapes of these arrays is different
         this_grams = [np.squeeze(g) for g in this_grams]
 
-        #if join_mode in {JoinMode.AFFINE_INVARIANT, JoinMode.LOG_EUCLIDEAN, JoinMode.RIEMANN}:
-        if True:
+        if join_mode in {JoinMode.AFFINE_INVARIANT, JoinMode.LOG_EUCLIDEAN, JoinMode.RIEMANN}:
             # Add a small epsilon to the diagonals to ensure a positive definite matrix
             eps = 0.05
             this_grams = [g + np.identity(g.shape[0])*eps for g in this_grams]
