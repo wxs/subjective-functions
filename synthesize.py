@@ -40,7 +40,8 @@ if __name__ == "__main__":
     parser.add_argument("--mul", type=float, default=1.0, help="Multiply target grams by this amount")
     parser.add_argument("--if-weight", type=float, default=1., help="Inter-frame loss weight")
     parser.add_argument("--if-shift", type=float, default=5., help="How many pixel-shift should inter-frame loss approximate?")
-    parser.add_argument("--if-order", type=int, default=2., help="How many frames should we 'tie' together?")
+    parser.add_argument("--if-order", type=int, default=2, help="How many frames should we 'tie' together?")
+    parser.add_argument("--if-distance-type", type=str, choices = ['l2', 'lap1'], default="l2", help="How should we measure the distance between frames?")
     parser.add_argument("--seed", type=str, choices = ['random', 'symmetric'], default='random', help="How to seed the optimization")
     parser.add_argument("--data-dir", "-d", type=str, default="model_data", help="Where to find the VGG weight files")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Where to save the generated outputs")
@@ -131,6 +132,7 @@ if __name__ == "__main__":
             width = width, height = height, frame_count=args.count,
             x0 = x0,
             interframe_loss_weight=args.if_weight, interframe_order=args.if_order, target_interframe_distance = target_distance,
+            interframe_distance_type = args.if_distance_type,
             output_directory = output_dir, max_iter=args.max_iter, save_every=args.save_every, tol=args.tol
             )
 

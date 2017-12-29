@@ -45,6 +45,20 @@ def load_model(padding='valid', data_dir="model_data"):
 
     return keras.models.load_model(fname)
 
+used_names = set()
+def make_name(name):
+    global used_names
+    original_name = name
+    appendix=0
+    while name in used_names:
+        appendix += 1
+        name = "%s.%d" % (original_name, appendix)
+    used_names.add(name)
+    return name
+
+        
+
+
 def PrintLayer(msg):
     return Lambda(lambda x: tf.Print(x, [x], message=msg, summarize=16))
 
@@ -448,8 +462,6 @@ def lap1_diff(laplacian, frame_step=1):
     out = Lambda(lambda x: K.mean(K.abs(x), axis=1))(out) # (frames,)
     return out
     
-
-
 def lap_loss(pyramid_model, target_distance=1., order=2):
     # The pyramid model is a Gaussian pyramid, now compute the Laplacian pyramid.
     laplacian = laplacian_from_gaussian(pyramid_model)
@@ -463,6 +475,36 @@ def lap_loss(pyramid_model, target_distance=1., order=2):
         order_errors.append(out)
 
     return keras.layers.add(order_errors)
+
+def l2_diff(frames, frame_step=1):
+    ''' Model which takes the l2 distance between frames frame_step apart'''
+    print("++++FRAMES")
+    print(frames)
+    # Take the difference between the frames
+    out = Lambda(lambda frames, frame_step=frame_step:
+            K.batch_flatten(frames - K.concatenate([frames[frame_step:], frames[0:frame_step]], axis=0)))(frames)
+
+    # square
+    out = Lambda(lambda x: K.square(x), name=make_name("l2_diff_square"))(out)
+    
+    # mean instead of sum so we can ignore pixel count
+    out = Lambda(lambda x: K.mean(x, axis=1), name=make_name("l2_diff_mean"))(out)
+
+    # sqrt
+    out = Lambda(lambda x: K.sqrt(x), name=make_name("l2_diff_sqrt"))(out)
+
+    return out # (frames,) list of l2 distances
+
+def l2_loss(pyramid_model, target_distance = 1., order = 2):
+    order_errors = []
+    for frame_step in range(1,order+1):
+        out = l2_diff(pyramid_model.outputs[0], frame_step)
+        out = PrintLayer("mean abs diff")(out)
+        # Previously I took the square root of this mean...
+        out = Lambda(lambda x: K.expand_dims(K.mean(K.square(x - target_distance*frame_step))))(out)
+        order_errors.append(out)
+    return keras.layers.add(order_errors)
+    
 
 def novelty_loss(grams, mul=1.0):
     dets = []
@@ -523,14 +565,18 @@ def internal_novelty_loss(grams, mul=1.0):
 
 
 
-def integer_interframe_distance(pyramid_model, image, shift):
+def integer_interframe_distance(pyramid_model, image, shift, interframe_distance_type ="l2"):
     ''' How much is the lap1 diff if we shift this image by "shift" pixels?'''
     rolled_1 = np.roll(image, shift, axis=1)
     rolled_2 = np.roll(rolled_1, shift, axis=2)
     stacked = np.concatenate([image, rolled_1, rolled_2], axis=0)
 
-    laplacian_levels = laplacian_from_gaussian(pyramid_model)
-    diff = lap1_diff(laplacian_levels)
+    if interframe_distance_type == "lap1":
+        laplacian_levels = laplacian_from_gaussian(pyramid_model)
+        diff = lap1_diff(laplacian_levels)
+    elif interframe_distance_type == "l2":
+        diff = l2_diff(pyramid_model.outputs[0])
+
     diff_model = Model(inputs=pyramid_model.input, outputs=diff)
     
     predicted_diffs = diff_model.predict(stacked)
@@ -538,7 +584,7 @@ def integer_interframe_distance(pyramid_model, image, shift):
     print(predicted_diffs)
     return np.mean(predicted_diffs[:2]) # Ignore the third one, which is a double-shift.
 
-def interframe_distance(pyramid_model, image, shift):
+def interframe_distance(pyramid_model, image, shift, interframe_distance_type = "l2"):
     floored = int(shift)
     a = integer_interframe_distance(pyramid_model, image, floored)
     if floored == shift:
@@ -609,8 +655,6 @@ def make_progress_callback(shape, output_directory, save_every=2):
     return progress_callback
 
 
-
-
 def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, output_directory="outputs",
         save_every=10, max_iter=500, tol=1e-9, octave_step=1, internal=False):
     generated_shape = (height, width)
@@ -653,6 +697,7 @@ def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, ou
 def synthesize_animation(pyramid_model, gram_model, target_grams,
         width, height, frame_count=1,
         interframe_loss_weight = 1., interframe_order=2, target_interframe_distance = 50.,
+        interframe_distance_type = "l2",
         output_directory = "outputs",
         x0=None, max_iter=200, save_every=2, tol=1e-9):
     from scipy import ndimage
@@ -681,7 +726,17 @@ def synthesize_animation(pyramid_model, gram_model, target_grams,
     style_loss = diff_loss(gram_model, target_grams)
     style_loss = PrintLayer("Style Loss")(style_loss)
     if frame_count > 1:
-        interframe_loss = lap_loss(pyramid_model, target_distance=target_interframe_distance, order=interframe_order)
+        if interframe_distance_type == "lap1":
+            interframe_loss = lap_loss(pyramid_model,
+                    target_distance = target_interframe_distance,
+                    order = interframe_order)
+        elif interframe_distance_type == "l2":
+            interframe_loss = l2_loss(pyramid_model,
+                    target_distance = target_interframe_distance,
+                    order = interframe_order)
+        else:
+            print("ERROR: unknown interframe distance type %s" % interframe_distance_type)
+
         interframe_loss = PrintLayer("Interframe Loss")(interframe_loss)
 
         total_loss = keras.layers.add([style_loss, Lambda(lambda x: interframe_loss_weight*x)(interframe_loss)])
