@@ -109,7 +109,7 @@ if __name__ == "__main__":
     if args.seed == 'symmetric':
         x0 = x0 + x0[:,::-1,    :, :]
         x0 = x0 + x0[:,   :, ::-1, :]
-        blur_radius = 50
+        blur_radius = 30
         for i in range(3):
             x0[...,i] = blur_radius*50*ndimage.gaussian_filter(x0[...,i], blur_radius)
         x0 += np.random.randn(*(x0.shape)) * 2
@@ -124,7 +124,7 @@ if __name__ == "__main__":
         for im in gram.get_images(args.source, source_scale = args.source_scale, source_width=args.source_width):
             interframe_distances.append(gram.interframe_distance(pyramid_model, im, shift=args.if_shift))
         target_distance = np.mean(interframe_distances)
-        print("Shifting the source images by {} gives a lap1 interframe distance of approx {}".format(args.if_shift, target_distance))
+        print("Shifting the source images by {} gives a {} interframe distance of approx {}".format(args.if_shift, args.if_distance_type, target_distance))
     else:
         target_distance=None
 
