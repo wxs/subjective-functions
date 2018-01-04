@@ -475,33 +475,42 @@ def lap_loss(pyramid_model, target_distance=1., order=2):
 
     return keras.layers.add(order_errors)
 
-def l2_diff(frames, frame_step=1):
+def l2_diff(octaves, frame_step=1):
     ''' Model which takes the l2 distance between frames frame_step apart'''
-    print("++++FRAMES")
-    print(frames)
-    # Take the difference between the frames
-    out = Lambda(lambda frames, frame_step=frame_step:
-            K.batch_flatten(frames - K.concatenate([frames[frame_step:], frames[0:frame_step]], axis=0)))(frames)
+    octave_diffs = []
+    for frames in octaves:
+        # Take the difference between the frames
+        out = Lambda(lambda frames, frame_step=frame_step:
+                K.batch_flatten(frames - K.concatenate([frames[frame_step:], frames[0:frame_step]], axis=0)))(frames)
 
-    # square
-    out = Lambda(lambda x: K.square(x), name=make_name("l2_diff_square"))(out)
-    
-    # mean instead of sum so we can ignore pixel count
-    out = Lambda(lambda x: K.mean(x, axis=1), name=make_name("l2_diff_mean"))(out)
+        # square
+        out = Lambda(lambda x: K.square(x), name=make_name("l2_diff_square"))(out)
+        
+        # mean instead of sum so we can ignore pixel count
+        out = Lambda(lambda x: K.mean(x, axis=1), name=make_name("l2_diff_mean"))(out)
 
-    # sqrt
-    out = Lambda(lambda x: K.sqrt(x), name=make_name("l2_diff_sqrt"))(out)
+        # sqrt
+        out = Lambda(lambda x: K.sqrt(x), name=make_name("l2_diff_sqrt"))(out)
 
-    return out # (frames,) list of l2 distances
+        # (frames,) list of l2 distances
 
-def l2_loss(pyramid_model, target_distance = 1., order = 2):
+        octave_diffs.append(out)
+    return octave_diffs # [(frames, ) ...] list of lists of l2 distances
+
+def l2_loss(pyramid_model, target_distances = [1.], order = 2, octaves = 1):
     order_errors = []
     for frame_step in range(1,order+1):
-        out = l2_diff(pyramid_model.outputs[0], frame_step)
-        out = PrintLayer("mean abs diff")(out)
-        # Previously I took the square root of this mean...
-        out = Lambda(lambda x: K.expand_dims(K.mean(K.square(x - target_distance*frame_step))))(out)
-        order_errors.append(out)
+        out = l2_diff(pyramid_model.outputs[:octaves], frame_step)
+        assert len(target_distances) == len(out), "target different shape than the diff! %s vs %s" %\
+                (target_distances, out)
+
+        octave_errors = []
+        for octave, target_distance in zip(out,target_distances):
+            # Previously I took the square root of this mean...
+            out = Lambda(lambda x, target_distance = target_distance:
+                    K.expand_dims(K.mean(K.square(x - target_distance*frame_step))))(octave)
+            octave_errors.append(out)
+        order_errors.append(keras.layers.add(octave_errors))
     return keras.layers.add(order_errors)
     
 
@@ -564,7 +573,7 @@ def internal_novelty_loss(grams, mul=1.0):
 
 
 
-def integer_interframe_distance(pyramid_model, image, shift, interframe_distance_type ="l2"):
+def integer_interframe_distance(pyramid_model, image, shift, interframe_distance_type ="l2", interframe_octaves = 1):
     ''' How much is the lap1 diff if we shift this image by "shift" pixels?'''
     rolled_1 = np.roll(image, shift, axis=1)
     rolled_2 = np.roll(rolled_1, shift, axis=2)
@@ -574,22 +583,26 @@ def integer_interframe_distance(pyramid_model, image, shift, interframe_distance
         laplacian_levels = laplacian_from_gaussian(pyramid_model)
         diff = lap1_diff(laplacian_levels)
     elif interframe_distance_type == "l2":
-        diff = l2_diff(pyramid_model.outputs[0])
+        diff = l2_diff(pyramid_model.outputs[:interframe_octaves])
 
     diff_model = Model(inputs=pyramid_model.input, outputs=diff)
     
     predicted_diffs = diff_model.predict(stacked)
 
     print(predicted_diffs)
-    return np.mean(predicted_diffs[:2]) # Ignore the third one, which is a double-shift.
+    return [np.mean(o[:2]) for o in predicted_diffs] # Ignore the third one, which is a double-shift.
 
-def interframe_distance(pyramid_model, image, shift, interframe_distance_type = "l2"):
+def interframe_distance(pyramid_model, image, shift, interframe_distance_type = "l2", interframe_octaves = 1):
     floored = int(shift)
-    a = integer_interframe_distance(pyramid_model, image, floored)
+    a = integer_interframe_distance(pyramid_model, image, floored,
+            interframe_distance_type = interframe_distance_type,
+            interframe_octaves = interframe_octaves)
     if floored == shift:
         return a
     else:
-        b = integer_interframe_distance(pyramid_model, image, floored+1)
+        b = integer_interframe_distance(pyramid_model, image, floored+1,
+                interframe_distance_type = interframe_distance_type,
+                interframe_octaves = interframe_octaves)
         t = shift-floored
         return a * (1 - t) + b * (t)
 
@@ -695,8 +708,9 @@ def synthesize_novelty(gram_model, width, height, x0, frame_count=1, mul=1.0, ou
 
 def synthesize_animation(pyramid_model, gram_model, target_grams,
         width, height, frame_count=1,
-        interframe_loss_weight = 1., interframe_order=2, target_interframe_distance = 50.,
+        interframe_loss_weight = 1., interframe_order=2, target_interframe_distances = [50.],
         interframe_distance_type = "l2",
+        interframe_octaves = 1,
         output_directory = "outputs",
         x0=None, max_iter=200, save_every=2, tol=1e-9):
     from scipy import ndimage
@@ -727,11 +741,13 @@ def synthesize_animation(pyramid_model, gram_model, target_grams,
     if frame_count > 1:
         if interframe_distance_type == "lap1":
             interframe_loss = lap_loss(pyramid_model,
-                    target_distance = target_interframe_distance,
+                    target_distances = target_interframe_distances,
+                    octaves = interframe_octaves,
                     order = interframe_order)
         elif interframe_distance_type == "l2":
             interframe_loss = l2_loss(pyramid_model,
-                    target_distance = target_interframe_distance,
+                    target_distances = target_interframe_distances,
+                    octaves = interframe_octaves,
                     order = interframe_order)
         else:
             print("ERROR: unknown interframe distance type %s" % interframe_distance_type)
