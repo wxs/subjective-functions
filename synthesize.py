@@ -40,7 +40,9 @@ if __name__ == "__main__":
     parser.add_argument("--mul", type=float, default=1.0, help="Multiply target grams by this amount")
     parser.add_argument("--if-weight", type=float, default=1., help="Inter-frame loss weight")
     parser.add_argument("--if-shift", type=float, default=5., help="How many pixel-shift should inter-frame loss approximate?")
-    parser.add_argument("--if-order", type=int, default=2., help="How many frames should we 'tie' together?")
+    parser.add_argument("--if-order", type=int, default=2, help="How many frames should we 'tie' together?")
+    parser.add_argument("--if-distance-type", type=str, choices = ['l2', 'lap1'], default="l2", help="How should we measure the distance between frames?")
+    parser.add_argument("--if-octaves", type=int, default=1, help="At how many scales should the distance function operate?")
     parser.add_argument("--seed", type=str, choices = ['random', 'symmetric'], default='random', help="How to seed the optimization")
     parser.add_argument("--data-dir", "-d", type=str, default="model_data", help="Where to find the VGG weight files")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Where to save the generated outputs")
@@ -49,6 +51,11 @@ if __name__ == "__main__":
             help="List of file to use as source textures")
 
     args = parser.parse_args()
+
+    # Any necessary validation here?
+    if args.if_octaves > args.octaves:
+        print("Error: if_octaves must be less than octaves, but %d > %d" % (args.if_octaves, args.octaves))
+        sys.exit(1)
 
     output_size = (args.output_width, args.output_height if args.output_height is not None else args.output_width)
 
@@ -62,11 +69,13 @@ if __name__ == "__main__":
     if args.source_width:
         output_dir += ".w{}".format(args.source_width)
     if args.count > 1:
-        output_dir += ".c{}".format(args.count)
+        output_dir += ".c{}.ifs{}".format(args.count, args.if_shift)
     if args.mul != 1.0:
         output_dir += ".m{}".format(args.mul)
     if args.join_mode != JoinMode.AVERAGE:
         output_dir += ".j{}".format(args.join_mode.value)
+    if args.if_octaves != 1:
+        output_dir += ".ifo%d" % args.if_octaves
 
     output_dir += ".{}x{}".format(*output_size)
 
@@ -108,7 +117,7 @@ if __name__ == "__main__":
     if args.seed == 'symmetric':
         x0 = x0 + x0[:,::-1,    :, :]
         x0 = x0 + x0[:,   :, ::-1, :]
-        blur_radius = 50
+        blur_radius = 30
         for i in range(3):
             x0[...,i] = blur_radius*50*ndimage.gaussian_filter(x0[...,i], blur_radius)
         x0 += np.random.randn(*(x0.shape)) * 2
@@ -121,16 +130,28 @@ if __name__ == "__main__":
     interframe_distances = []
     if args.count > 1:
         for im in gram.get_images(args.source, source_scale = args.source_scale, source_width=args.source_width):
-            interframe_distances.append(gram.interframe_distance(pyramid_model, im, shift=args.if_shift))
-        target_distance = np.mean(interframe_distances)
-        print("Shifting the source images by {} gives a lap1 interframe distance of approx {}".format(args.if_shift, target_distance))
+            interframe_distances.append(gram.interframe_distance(pyramid_model, im,
+                shift=args.if_shift,
+                interframe_distance_type = args.if_distance_type,
+                interframe_octaves = args.if_octaves))
+
+        print("Raw interframe distances: ")
+        print(interframe_distances)
+
+        #target_distances = np.mean(interframe_distances, axis=1)
+        target_distances = interframe_distances[0]
+        print("Shifting the source images by {} gives a {} interframe distance of approx {}".format(args.if_shift, args.if_distance_type, target_distances))
     else:
-        target_distance=None
+        target_distances=None
 
     gram.synthesize_animation(pyramid_model, pyramid_gram_model, target_grams,
             width = width, height = height, frame_count=args.count,
             x0 = x0,
-            interframe_loss_weight=args.if_weight, interframe_order=args.if_order, target_interframe_distance = target_distance,
+            interframe_loss_weight=args.if_weight,
+            interframe_order=args.if_order,
+            target_interframe_distances = target_distances,
+            interframe_distance_type = args.if_distance_type,
+            interframe_octaves = args.if_octaves,
             output_directory = output_dir, max_iter=args.max_iter, save_every=args.save_every, tol=args.tol
             )
 
